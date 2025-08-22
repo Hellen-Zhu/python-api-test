@@ -22,14 +22,13 @@ class TestContext:
 
     def add_step_response(self, step_name, response_data):
         """
-        【补全的方法】
         将一个步骤的完整响应数据存入上下文。
         """
         self.storage[step_name] = {'response': response_data}
 
     def get_value_by_path(self, path_string):
         """
-        根据 "step_1.response.body.user.id" 这样的路径字符串从 context 中取值
+        根据 "response.body" 这样的路径字符串从 context 中取值
         """
         try:
             # 首先检查是否是直接的变量引用
@@ -63,7 +62,7 @@ class TestContext:
     def resolve_placeholders(self, data_structure):
         """递归解析字符串或字典/列表中的占位符 {{...}}"""
         if isinstance(data_structure, str):
-            # 匹配 {{step_1.response.body.user_id}} 这种模式
+            # 匹配 {{response.body.user_id}} 这种模式
             matches = re.findall(r'\{\{([^}]+)\}\}', data_structure)
             for match in matches:
                 # 解析路径: step_1.response.body.user_id -> ['step_1', 'response', 'body', 'user_id']

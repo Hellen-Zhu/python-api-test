@@ -1,64 +1,186 @@
 # core/assertion_engine.py
+
 import pytest
+import json
+import allure
+from typing import Dict, List, Any
 from jsonpath_ng import parse
+from sqlalchemy import text
+from utils.placeholder_parser import resolve_placeholders # 导入解析器
+
 
 class AssertionEngine:
-    
-    def execute_assertions(self, response, assertion_rules):
-        """
-        执行一个步骤的所有断言。
-        :param response: dict, 包含 'status_code', 'headers', 'body' 的响应对象
-        :param assertion_rules: list, 从数据库获取的断言规则对象列表
-        """
+    """
+    统一的、关键字驱动的智能断言引擎。
+    它接收原始的验证规则，并在内部对每个关键字进行“即时解析”。
+    """
+    def __init__(self):
+        pass
+
+    def execute_assertions(self, response: Dict[str, Any], validation_rules: Dict[str, Any], app_db_conn=None, context=None, data_set_vars=None):
+        if not isinstance(validation_rules, dict):
+            pytest.fail(f"Validation rules must be a JSON object, but got {type(validation_rules).__name__}", pytrace=False)
+
         failures = []
 
-        for rule in assertion_rules:
-            try:
-                rule_type = rule['rule_type']
-                expected_value = rule['expected_value']
+        # --- 调度中心：将解析所需的上下文传递给每个 dispatcher ---
+        if "expectedStatusCode" in validation_rules:
+            self._dispatch_status_code(response, validation_rules, failures, context, data_set_vars)
 
-                if rule_type == 'status_code_equals':
-                    self._assert_status_code(response['status_code'], expected_value)
+        if "body" in validation_rules:
+            self._dispatch_body_match(response, validation_rules, failures, context, data_set_vars)
 
-                elif rule_type == 'json_path_equals':
-                    self._assert_json_path(response['body'], rule['json_path'], expected_value)
+        if "containsText" in validation_rules:
+            self._dispatch_contains_text(response, validation_rules, failures, context, data_set_vars)
 
-                elif rule_type == 'contains_text':
-                    self._assert_contains_text(response['body'], expected_value)
+        if "notNull" in validation_rules:
+            self._dispatch_not_null(response, validation_rules, failures, context, data_set_vars)
 
-                elif rule_type == 'header_equals':
-                    self._assert_header(response['headers'], rule['json_path'], expected_value)
+        if "notExist" in validation_rules:
+            self._dispatch_not_exist(response, validation_rules, failures, context, data_set_vars)
 
-            except AssertionError as e:
-                description = rule.get('description') or rule['rule_type']
-                failures.append(f"Assertion Failed ({description}): {e}")
-                
+        if "dbValidation" in validation_rules:
+            self._dispatch_db_validation(response, validation_rules, app_db_conn, failures, context, data_set_vars)
+
         if failures:
-            # 将所有失败信息合并,通过 pytest.fail 抛出,Allure会完美展示
             pytest.fail("\n".join(failures), pytrace=False)
 
-    def _assert_status_code(self, actual_code, expected_code):
-        assert str(actual_code) == str(expected_code), \
-            f"Expected status code '{expected_code}', but got '{actual_code}'."
+    # --- Dispatcher Methods ---
 
-    def _assert_json_path(self, body, json_path, expected_value):
+    def _dispatch_status_code(self, response, rules, failures, context, data_set_vars):
+        resolved_status_code = resolve_placeholders(rules["expectedStatusCode"], context, data_set_vars)
+        with allure.step(f"Assert: Status Code equals [{resolved_status_code}]"):
+            try:
+                self._assert_status_code(response['status_code'], resolved_status_code)
+            except AssertionError as e: failures.append(str(e))
+
+    def _dispatch_body_match(self, response, rules, failures, context, data_set_vars):
+        with allure.step("Assert: Body partially matches expected JSON"):
+            try:
+                resolved_expected_json = resolve_placeholders(rules["body"], context, data_set_vars)
+                if resolved_expected_json:
+                    allure.attach(json.dumps(resolved_expected_json, indent=2, ensure_ascii=False), name="Expected Partial JSON (Resolved)", attachment_type=allure.attachment_type.JSON)
+                    self._assert_partial_json_match(response['body'], resolved_expected_json)
+            except AssertionError as e: failures.append(str(e))
+
+    def _dispatch_contains_text(self, response, rules, failures, context, data_set_vars):
+        resolved_text = resolve_placeholders(rules["containsText"], context, data_set_vars)
+        with allure.step(f"Assert: Body contains text [{resolved_text[:50]}...]"):
+            try:
+                self._assert_body_contains_text(response['body'], resolved_text)
+            except AssertionError as e: failures.append(str(e))
+
+    def _dispatch_not_null(self, response, rules, failures, context, data_set_vars):
+        json_paths = rules["notNull"]
+        if not isinstance(json_paths, list):
+            failures.append("Assertion Failed: 'notNull' value must be an array of JSONPaths.")
+            return
+        with allure.step(f"Assert: Paths are not null {json_paths}"):
+            for path in json_paths:
+                try:
+                    self._assert_json_path_not_null(response['body'], path)
+                except AssertionError as e: failures.append(str(e))
+
+    def _dispatch_not_exist(self, response, rules, failures, context, data_set_vars):
+        json_paths = rules["notExist"]
+        if not isinstance(json_paths, list):
+            failures.append("Assertion Failed: 'notExist' value must be an array of JSONPaths.")
+            return
+        with allure.step(f"Assert: Paths do not exist {json_paths}"):
+            for path in json_paths:
+                try:
+                    self._assert_json_path_not_exist(response['body'], path)
+                except AssertionError as e: failures.append(str(e))
+
+    def _dispatch_db_validation(self, response, rules, db_conn, failures, context, data_set_vars):
+        if not db_conn:
+            allure.step("⚠️ SKIPPED: DB Validation (no application DB connection available)")
+            return
+
+        db_validation_rule = rules["dbValidation"]
+        query = db_validation_rule.get("query")
+        if not query:
+            failures.append("Assertion Failed: 'dbValidation' is missing the 'query' key.")
+            return
+
+        resolved_query = resolve_placeholders(query, context, data_set_vars)
+        with allure.step(f"Assert: Database validation with query [{resolved_query[:100]}...]"):
+            try:
+                self._assert_db_query(db_conn, resolved_query, db_validation_rule, response, context, data_set_vars)
+            except Exception as e:
+                failures.append(f"DB query or validation failed: {e}")
+
+    # --- Helper Assertion Methods ---
+
+    def _assert_db_query(self, db_conn, query, rule, response, context, data_set_vars):
+        result = db_conn.execute(text(query))
+        actual_rows = [dict(row._mapping) for row in result]
+        allure.attach(json.dumps(actual_rows, indent=2, default=str), name="Actual DB Query Result", attachment_type=allure.attachment_type.JSON)
+
+        if "expected" in rule:
+            resolved_expected_rows = resolve_placeholders(rule["expected"], context, data_set_vars)
+            allure.attach(json.dumps(resolved_expected_rows, indent=2), name="Expected DB Rows (Resolved)", attachment_type=allure.attachment_type.JSON)
+            assert actual_rows == resolved_expected_rows, f"DB query result mismatch. Expected: {resolved_expected_rows}, Actual: {actual_rows}"
+            print("DB query result matches expected static values.")
+
+        elif "expectedFromResponse" in rule:
+            expected_mappings = rule["expectedFromResponse"]
+            assert len(actual_rows) > 0, "DB query returned no rows to validate against response."
+            db_row = actual_rows[0]
+
+            expected_from_response = {}
+            for db_column, response_json_path in expected_mappings.items():
+                matches = parse(response_json_path).find(response['body'])
+                if matches:
+                    expected_from_response[db_column] = matches[0].value
+                else:
+                    expected_from_response[db_column] = f"ERROR: JSONPath '{response_json_path}' not found!"
+            allure.attach(json.dumps([expected_from_response], indent=2, default=str), name="Expected DB Rows (from API Response)", attachment_type=allure.attachment_type.JSON)
+
+            for db_column, response_json_path in expected_mappings.items():
+                assert db_column in db_row, f"Column '{db_column}' not found in DB query result."
+                matches = parse(response_json_path).find(response['body'])
+                assert len(matches) > 0, f"JSONPath '{response_json_path}' not found in API response."
+                api_value = matches[0].value
+                db_value = db_row[db_column]
+                assert str(api_value) == str(db_value), f"Mismatch for DB column '{db_column}'. DB Value: '{db_value}', API Value (from {response_json_path}): '{api_value}'"
+                print(f"DB column '{db_column}' value '{db_value}' matches API response.")
+
+    def _assert_status_code(self, actual, expected):
+        assert str(actual) == str(expected), f"Expected status code '{expected}', but got '{actual}'."
+        print(f"Status code is '{actual}' as expected.")
+
+    def _assert_partial_json_match(self, actual, expected, path="body"):
+        if isinstance(expected, dict):
+            assert isinstance(actual, dict), f"Type mismatch at path '{path}': expected dict, got {type(actual).__name__}"
+            for key, expected_value in expected.items():
+                current_path = f"{path}.{key}"
+                assert key in actual, f"Missing key at path '{current_path}'"
+                self._assert_partial_json_match(actual[key], expected_value, path=current_path)
+        elif isinstance(expected, list):
+            assert isinstance(actual, list), f"Type mismatch at path '{path}': expected list, got {type(actual).__name__}"
+            assert len(actual) >= len(expected), f"Length mismatch at path '{path}': expected at least {len(expected)}, got {len(actual)}"
+            for i, expected_item in enumerate(expected):
+                current_path = f"{path}[{i}]"
+                self._assert_partial_json_match(actual[i], expected_item, path=current_path)
+        else:
+            assert actual == expected, f"Value mismatch at path '{path}': expected '{expected}', got '{actual}'"
+
+        if path == "body":
+            print("Body partially matches the expectation.")
+
+    def _assert_body_contains_text(self, body, text):
+        assert text in str(body), f"Expected text '{text}' not found in response body."
+        print(f"Response body contains the text '{text}'.")
+
+    def _assert_json_path_not_null(self, body, json_path):
         matches = parse(json_path).find(body)
-        assert matches, f"JSONPath '{json_path}' not found in response body."
-        
+        assert len(matches) > 0, f"Path '{json_path}' not found (expected not null)."
         actual_value = matches[0].value
-        # 注意类型转换,从数据库来的 expected_value 是字符串
-        expected_value_typed = type(actual_value)(expected_value)
-        
-        assert actual_value == expected_value_typed, \
-            f"Value at JSONPath '{json_path}' did not match. Expected: '{expected_value}', Actual: '{actual_value}'."
+        assert actual_value is not None, f"Path '{json_path}' exists but its value is null."
+        print(f"Path '{json_path}' exists and is not null.")
 
-    def _assert_contains_text(self, body, expected_text):
-        assert body and expected_text in str(body), \
-            f"Expected text '{expected_text}' not found in response body."
-
-    def _assert_header(self, headers, header_name, expected_value):
-        # header_name 不区分大小写
-        actual_value = headers.get(header_name.lower())
-        assert actual_value is not None, f"Header '{header_name}' not found in response."
-        assert str(actual_value) == str(expected_value), \
-            f"Header '{header_name}' did not match. Expected: '{expected_value}', Actual: '{actual_value}'."
+    def _assert_json_path_not_exist(self, body, json_path):
+        matches = parse(json_path).find(body)
+        assert len(matches) == 0, f"Path '{json_path}' was found, but was expected not to exist."
+        print(f"Path '{json_path}' does not exist as expected.")

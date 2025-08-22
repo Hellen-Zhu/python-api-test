@@ -5,4 +5,4 @@ API测试框架
 
 __version__ = "1.0.0"
 __author__ = "API Test Framework Team"
-__email__ = "support@apitestframework.com"
+__email__ = "774804075@qq.com"
