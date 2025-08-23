@@ -26,8 +26,14 @@ class ApiClient:
             raise ValueError("API base_url 不能为空")
         self.base_url = base_url
         self.session = requests.Session()
+        
+        # 禁用环境变量代理，避免localhost请求通过代理导致502错误
+        self.session.trust_env = False
+        
         self.assertion_engine = AssertionEngine()
         self.audit_trail = [] # 用于存储本次用例执行的审计轨迹
+        # 用于存储本次用例使用的、已解析的数据集变量
+        self.resolved_data_set_variables = {}
 
     def execute_steps(self, case_details: Dict[str, Any], app_db_conn=None):
         """
@@ -58,6 +64,7 @@ class ApiClient:
                     # 1. 解析请求数据中的所有占位符
                     api_url_path = resolve_placeholders(step.get('api_url_path', ''), context, data_set_variables)
                     full_url = self.base_url + api_url_path
+
                     headers = resolve_placeholders(step.get('headers'), context, data_set_variables)
                     params = resolve_placeholders(step.get('params'), context, data_set_variables)
                     body = resolve_placeholders(step.get('body'), context, data_set_variables)
@@ -103,7 +110,7 @@ class ApiClient:
                     if final_validations:
                         allure.attach(source_message, name="Validation Source")
                         
-                        print(f"INFO: {source_message}")
+
 
                         # 将原始的验证规则和解析所需的上下文一起传递给断言引擎
                         self.assertion_engine.execute_assertions(

@@ -240,6 +240,11 @@ python run.py --parallel auto
 python run.py --parallel 8
 ```
 
+#### Taas
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
 ## 📊 测试报告
 
 ### Allure报告
