@@ -1,277 +1,311 @@
-# Python API Test Framework
+# Enterprise-Grade API Automation Testing Framework
 
-一个功能完整的Python API自动化测试框架，支持数据库驱动测试、多环境配置、丰富的断言功能和Allure测试报告。
+一个基于 Python 技术栈构建的高度灵活、数据驱动的企业级API自动化测试框架。该框架将"测试逻辑"、"测试流程"与"测试数据"彻底分离，旨在提升测试用例的可维护性、复用性和扩展性。
 
-## 🚀 功能特性
+## 🚀 核心特性
 
-- **数据库驱动测试**：测试用例存储在PostgreSQL数据库中，支持动态生成测试
-- **多环境支持**：支持dev、uat等不同环境的配置管理
-- **丰富断言**：支持状态码、JSON路径、JSON Schema、数据库验证等多种断言类型
-- **参数化测试**：支持从响应中提取变量并在后续步骤中使用
-- **Allure报告**：集成Allure测试报告，提供详细的测试结果展示
-- **灵活筛选**：支持按组件、标签、用例ID、JIRA ID等条件筛选测试用例
-- **动态测试生成**：根据数据库中的测试用例自动生成测试函数
-- **数据库验证**：支持API响应与数据库数据的对比验证
-- **自动化备份**：内置数据库备份脚本，支持定时备份和清理
+### ✨ 完全数据驱动
 
-## 📁 项目结构
+- 所有测试元素（环境、用例、步骤、参数、断言）均存储于数据库（PostgreSQL）
+- 配置即测试，无需编写代码即可创建和管理测试用例
+
+### 🏗️ 分层用例管理
+
+- 通过 `Service -> Module -> Component` 的结构化层级组织测试用例
+- 支持大规模测试用例的清晰分类和管理
+
+### 🔍 强大的筛选与执行
+
+- 支持通过命令行按服务、模块、组件、标签、Jira ID等任意维度动态筛选
+- 灵活的测试执行策略，支持并行执行
+
+### 🔄 动作/步骤复用
+
+- 通过"共享动作"(shared_actions)机制实现公共操作的一次定义、处处引用
+- 遵循DRY原则，极大提升用例可维护性
+
+### 📊 高级参数化
+
+- 测试模板与数据集分离，轻松实现同一业务流程的多场景、多数据覆盖
+- 支持为特定场景定义独特的期望结果
+
+### ✅ 统一关键字驱动断言引擎
+
+- 验证规则采用统一的JSON对象格式
+- 支持状态码、响应体匹配、文本包含、JSONPath验证等多种断言方式
+- 兼具易用性与强大的功能性
+
+### 📈 企业级报告
+
+- 深度集成Allure，为每个步骤、请求、响应、断言、变量提取生成详细报告
+- 层级清晰的测试执行轨迹
+
+### 🌐 测试即服务 (TaaS)
+
+- 内置FastAPI服务，可通过API调用来远程触发测试任务
+
+### 🌍 灵活的环境管理
+
+- 支持多套测试环境（dev、uat）的无缝切换
+
+## 🏗️ 项目架构
 
 ```
 auto_test/
-├── api.py                 # FastAPI TaaS服务
-├── core/                  # 核心模块
+├── api/                  # TaaS服务 (FastAPI)
+├── core/                 # 核心逻辑
 │   ├── api_client.py     # API客户端和执行引擎
-│   ├── assertion_engine.py # 智能断言引擎
-│   ├── context_manager.py # 测试上下文管理器
-│   ├── db_handler.py     # 数据库处理器
-│   └── result_writer.py  # 结果写入器
-├── models/               # 数据模型
-│   └── tables.py        # 数据库表结构
-├── tests/               # 测试文件
-│   ├── conftest.py     # pytest配置和fixtures
-│   └── test_main.py    # 主测试文件
-├── utils/               # 工具模块
+│   ├── assertion_engine.py # 断言引擎
+│   ├── context_manager.py # 测试上下文管理
+│   ├── db_handler.py     # 数据库操作
+│   └── result_writer.py  # 结果写入
+├── models/               # SQLAlchemy ORM模型
+│   └── tables.py         # 数据库表结构定义
+├── tests/                # Pytest测试文件
+│   ├── conftest.py       # Pytest配置
+│   └── test_main.py      # 主测试文件
+├── utils/                 # 工具类
 │   └── placeholder_parser.py # 占位符解析器
-├── database/            # 数据库相关
-│   ├── create.sql      # 建表脚本
-│   ├── insert.sql      # 示例数据
-│   └── backups/        # 数据库备份目录
-├── logs/                # 日志文件
-├── reports/             # 测试报告
-│   ├── allure-results/ # Allure原始结果
-│   └── allure-report/  # Allure HTML报告
-├── requirements.txt     # 依赖包
-├── run.py              # 测试运行器
-├── back.sh             # 数据库备份脚本
-└── README.md           # 项目说明
+├── database/              # 数据库相关文件
+├── logs/                  # 日志文件
+├── reports/               # Allure报告目录
+├── requirements.txt       # 项目依赖
+├── run.py                 # 命令行执行入口
+└── .env                   # 环境变量配置
 ```
 
-## 🛠️ 快速开始
+## 🗄️ 数据库设计
 
-### 环境要求
+### 核心表结构
 
-- Python 3.8+
-- PostgreSQL 数据库
-- Allure 命令行工具
+#### `api_auto_cases` - 测试用例模板
 
-### 安装依赖
+- 定义测试流程的宏观属性（名称、服务、模块、组件等）
+- 支持标签分类和作者信息
+
+#### `case_data_sets` - 数据集
+
+- 为每个用例模板提供具体的测试数据
+- 支持变量注入和验证规则覆盖
+- 可关联Jira ID实现需求追溯
+
+#### `api_actions` - 测试步骤
+
+- 定义具体的API请求步骤
+- 支持引用共享动作模板
+- 包含请求参数、验证规则和输出提取
+
+#### `shared_actions` - 共享动作模板
+
+- 存储可复用的公共操作（如登录、认证等）
+- 一次定义，多处引用
+
+#### `test_environments` - 测试环境
+
+- 管理不同环境的配置信息
+- 支持环境特定的数据库连接
+
+## 🚀 快速开始
+
+### 1. 环境准备
 
 ```bash
+# 克隆项目
+git clone <repository-url>
+cd auto_test
+
 # 创建虚拟环境
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # 或
 venv\Scripts\activate     # Windows
 
-# 安装依赖包
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 配置环境
+### 2. 数据库配置
 
-1. 创建 `.env` 文件，配置数据库连接：
-```env
-DB_PASSWORD=your_database_password
+```bash
+# 创建.env文件
+cp .env.example .env
+
+# 编辑.env文件，配置数据库连接信息
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=autotest
-DB_USER=admin
+DB_NAME=test_framework
+DB_USER=your_username
+DB_PASSWORD=your_password
 ```
 
-2. 初始化数据库：
-```bash
-# 连接到PostgreSQL数据库
-psql -U admin -d autotest
+### 3. 数据库初始化
 
-# 执行建表脚本
-\i database/create.sql
-
-# 插入示例数据（可选）
-\i database/insert.sql
+```sql
+-- 执行SQL脚本创建表结构
+-- 参考 models/tables.py 中的表定义
 ```
 
-### 运行测试
+### 4. 运行测试
 
 ```bash
 # 运行所有测试
-python run.py --env uat
+python run.py
 
-# 按条件筛选运行
-python run.py --env uat --service "User Management" --tags "P0,smoke"
-python run.py --env uat --jira "PROJ-456"
-python run.py --env uat --id 123
+# 按服务筛选
+python run.py --service "User Management"
 
-# 直接使用pytest运行
-python -m pytest tests/ --env uat
+# 按标签筛选
+python run.py --tags "P0,smoke"
 
-# 查看测试报告
-allure open reports/allure-report
+# 按Jira ID筛选
+python run.py --jira "PROJ-456"
+
+# 指定环境
+python run.py --env staging
+
+# 并行执行
+python run.py --parallel 4
 ```
 
-## 📊 支持的断言类型
+## 📝 使用指南
 
-### 基础断言
-- `expectedStatusCode`: 状态码等于指定值
-- `body`: JSON响应体部分匹配
-- `containsText`: 响应体包含指定文本
-- `notNull`: JSON路径存在且不为空
-- `notExist`: JSON路径不存在
+### 创建测试用例
 
-### 高级断言
-- `dbValidation`: 数据库验证
-  - `query`: SQL查询语句
-  - `expected`: 期望的静态结果
-  - `expectedFromResponse`: 从API响应中获取期望值
-
-## 🔧 配置说明
-
-### 数据库表结构
-
-框架使用以下核心数据库表：
-- `api_auto_cases`: 测试用例主表
-- `api_actions`: 测试步骤表
-- `shared_actions`: 共享动作模板表
-- `case_data_sets`: 用例数据集表
-- `test_environments`: 测试环境配置表
-- `auto_progress`: 测试执行进度表
-
-### 环境配置
-
-支持多环境配置，可在 `test_environments` 表中定义不同环境的参数：
+#### 1. 定义共享动作（可选）
 ```sql
-INSERT INTO test_environments (name, base_url, description) 
-VALUES ('uat', 'http://api.uat.example.com', 'UAT环境');
+INSERT INTO shared_actions (name, description, api_url_path, http_method, headers, body, validations) 
+VALUES (
+    'user_login',
+    '用户登录操作',
+    '/api/auth/login',
+    'POST',
+    '{"Content-Type": "application/json"}',
+    '{"username": "{{username}}", "password": "{{password}}"}',
+    '{"expectedStatusCode": 200, "containsText": "token"}'
+);
 ```
+
+#### 2. 创建测试用例模板
+```sql
+INSERT INTO api_auto_cases (name, service, module, component, tags) 
+VALUES (
+    '用户注册流程测试',
+    'User Management',
+    'Authentication',
+    'Registration',
+    ARRAY['P0', 'smoke']
+);
+```
+
+#### 3. 定义测试步骤
+```sql
+INSERT INTO api_actions (case_id, step_order, description, api_url_path, http_method, headers, body, validations) 
+VALUES (
+    1, 1, '用户注册',
+    '/api/users/register',
+    'POST',
+    '{"Content-Type": "application/json"}',
+    '{"username": "{{username}}", "email": "{{email}}", "password": "{{password}}"}',
+    '{"expectedStatusCode": 201, "notNull": ["$.id", "$.username"]}'
+);
+```
+
+#### 4. 创建数据集
+```sql
+INSERT INTO case_data_sets (case_id, data_set_name, variables, validations_override, jira_id) 
+VALUES (
+    1, '正常注册场景',
+    '{"username": "testuser", "email": "test@example.com", "password": "password123"}',
+    '{"1": {"expectedStatusCode": 201, "containsText": "success"}}',
+    'PROJ-123'
+);
+```
+
+### 高级功能
+
+#### 变量注入和上下文
+- 使用 `{{@variable_name}}` 引用数据集中的变量
+- 使用 `{{step_name.field}}` 引用之前步骤的响应数据
+
+#### 验证规则覆盖
+- 在数据集中通过 `validations_override` 字段覆盖默认验证规则
+- 支持步骤级别的验证规则定制
+
+#### 并行执行
+```bash
+# 使用所有可用CPU核心
+python run.py --parallel auto
+
+# 指定进程数
+python run.py --parallel 8
+```
+
+## 📊 测试报告
+
+### Allure报告
+- 自动生成详细的测试执行报告
+- 包含每个步骤的请求/响应详情
+- 支持测试结果的历史趋势分析
+
+### 报告查看
+```bash
+# 启动Allure服务（自动打开浏览器）
+python run.py
+
+# 生成静态报告
+allure generate reports/allure-results -o reports/allure-report --clean
+```
+
+## 🔧 配置选项
+
+### 环境变量
+- `TEST_ENV`: 测试环境名称
+- `PYTEST_PARALLEL_WORKERS`: 并行执行的工作进程数
 
 ### 命令行参数
-
-支持以下筛选参数：
-- `--env`: 运行环境（必需）
+- `--env`: 指定测试环境
 - `--service`: 按服务筛选
 - `--module`: 按模块筛选
 - `--component`: 按组件筛选
-- `--tags`: 按标签筛选（多个用逗号隔开）
-- `--jira`: 按JIRA ID筛选
-- `--id`: 按用例模板ID执行
-- `--debug-mode`: 开启Debug模式
+- `--tags`: 按标签筛选
+- `--jira`: 按Jira ID筛选
+- `--id`: 按用例ID执行
+- `--parallel`: 并行执行配置
+- `--debug-mode`: 调试模式
 
-## 🗄️ 数据库备份
+## 🧪 测试示例
 
-### 自动备份
-
-项目内置数据库备份脚本，支持：
-- 自动创建备份目录
-- 时间戳命名备份文件
-- 自动清理7天前的旧备份
-- 详细的备份日志
-
-```bash
-# 执行备份
-./back.sh
-
-# 备份文件位置
-./database/backups/autotest-YYYY-MM-DD_HHMMSS.backup
+### 基础API测试
+```python
+# 测试用例会自动从数据库加载并执行
+# 无需编写Python代码，完全通过数据库配置驱动
 ```
 
-### 手动备份
-
-```bash
-# 使用pg_dump手动备份
-pg_dump -U admin -d autotest -F c -f backup_file.backup
-
-# 恢复备份
-pg_restore -U admin -d autotest backup_file.backup
+### 复杂业务流程测试
+```python
+# 支持多步骤、多数据集的复杂测试场景
+# 通过共享动作实现步骤复用
+# 支持条件分支和循环逻辑
 ```
 
-## 📈 测试报告
+## 🚧 开发计划
 
-框架集成Allure测试报告，提供：
-- 详细的测试执行步骤
-- 请求和响应信息
-- 断言结果和失败分析
-- 数据库验证结果
-- 美观的HTML界面
-- 支持导出为PDF
+### 短期目标
+- [ ] Jira双向集成：测试结束后自动回写结果
+- [ ] 前端管理界面：Web界面管理测试用例
+- [ ] 性能测试集成：支持Locust压测
 
-## 🎯 使用示例
-
-### 基本测试流程
-
-1. **配置环境**：设置数据库连接和API基础URL
-2. **创建测试用例**：在数据库中定义测试用例、步骤和断言
-3. **运行测试**：使用 `python run.py --env uat` 执行测试
-4. **查看报告**：通过Allure查看详细的测试结果
-
-### 测试用例结构
-
-```yaml
-测试用例:
-  - 基本信息: 名称、描述、组件、标签
-  - 数据变量: 用户名、密码、期望结果等
-  - 测试步骤:
-    - 登录获取token
-    - 使用token查询用户信息
-  - 断言规则: 状态码、响应内容验证
-  - 输出变量: 提取token等关键信息
-```
-
-### 数据库验证示例
-
-```json
-{
-  "dbValidation": {
-    "query": "SELECT user_id, status FROM users WHERE email = '{{@email}}'",
-    "expectedFromResponse": {
-      "user_id": "{{response.body.userId}}",
-      "status": "{{response.body.status}}"
-    }
-  }
-}
-```
-
-## 🚨 注意事项
-
-1. **API认证**：确保测试用例中的用户名和密码与目标API匹配
-2. **数据库连接**：确保PostgreSQL数据库可访问且表结构正确
-3. **环境配置**：确保配置文件中的URL和数据库信息正确
-4. **依赖安装**：确保所有Python包和Allure工具已正确安装
-5. **备份策略**：定期执行数据库备份，保护测试数据
-
-## 🔍 故障排除
-
-### 常见问题
-
-1. **数据库连接失败**
-   - 检查数据库服务是否运行
-   - 验证连接参数是否正确
-   - 确认数据库表是否存在
-
-2. **API认证失败（401错误）**
-   - 检查测试用例中的用户名和密码
-   - 验证API服务的认证机制
-   - 确认API端点是否可访问
-
-3. **测试用例收集失败**
-   - 检查pytest参数配置
-   - 验证数据库中的测试数据
-   - 确认模型映射是否正确
-
-4. **备份失败**
-   - 检查PostgreSQL客户端工具是否安装
-   - 验证数据库用户权限
-   - 确认备份目录权限
-
-### 调试模式
-
-使用 `--debug-mode` 参数开启详细日志：
-```bash
-python run.py --env uat --debug-mode
-```
-
-## 📄 许可证
-
-MIT License
+### 长期目标
+- [ ] 移动端测试支持
+- [ ] 微服务测试优化
+- [ ] AI驱动的测试用例生成
 
 ## 📞 联系方式
 
-如有问题或建议，请通过GitHub Issues联系我们。
+- 项目维护者：[Hellen]
+- 邮箱：[774804075@qq.com]
+- 项目链接：[https://github.com/username/auto_test](https://github.com/username/auto_test)
+
+
+
+**注意**: 这是一个企业级的测试框架，建议在生产环境中使用前进行充分的测试和验证。

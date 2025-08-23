@@ -1,6 +1,7 @@
 # API测试框架依赖
 pytest==7.4.3
 pytest-html==4.1.1
+pytest-xdist==3.8.0
 allure-pytest==2.13.2
 requests==2.31.0
 sqlalchemy==2.0.23
